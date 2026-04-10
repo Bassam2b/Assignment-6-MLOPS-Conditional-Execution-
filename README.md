@@ -1,2 +1,2 @@
 # Assignment-6-MLOPS-Conditional-Execution-
-Assignment 6 MLOPS
+feat: update readme [run-train]
