@@ -1,1 +1,61 @@
+name: ML Training Pipeline
 
+on:
+  push:
+    branches:
+      - "**"   # Trigger on ALL branches so the linter always runs
+
+jobs:
+
+  # GATE 1 — Lightweight linter (runs on every push, every branch)
+  linter:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: pip install flake8
+
+      - name: Run Linter
+        run: flake8 . --max-line-length=120
+
+  # EXPENSIVE JOB — Only runs when ALL three gates pass:
+  #   1. linter succeeded       (needs: linter + success())
+  #   2. branch is main         (github.ref == 'refs/heads/main')
+  #   3. commit message contains [run-train]
+  train:
+    needs: linter
+    runs-on: cloud-gpu   # expensive GPU instance
+    if: |
+      success() &&
+      github.ref == 'refs/heads/main' &&
+      contains(github.event.head_commit.message, '[run-train]')
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Python Dependencies
+        run: pip install -r requirements.txt
+
+      # Main training step
+      - name: Run Training
+        run: python train.py
+
+      # REQUIREMENT 2 — Upload error logs ONLY on failure
+      # Runs when the 'Run Training' step (or any earlier step) fails.
+      # Lets the developer inspect logs without re-running the GPU job.
+      - name: Upload Error Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs
+          path: error_logs.txt   # training script must write errors here
+
+      # REQUIREMENT 3 — Cleanup step that runs no matter what
+      # Uses always() so it executes on success AND failure,
+      # ensuring expensive cloud volumes are never left running.
+      - name: Cleanup Temporary Cloud Volumes
+        if: always()
+        run: echo "Cleaning up temporary cloud volumes..."
